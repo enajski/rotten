@@ -1,0 +1,15 @@
+;; shadow-cljs configuration
+{:source-paths
+ ["src/dev"
+  "src/main"
+  "src/test"]
+
+ :dependencies
+ []
+
+ :dev-http {9600 "public"}
+
+ :builds
+ {:dev {:target  :browser
+        :modules {:main     {:init-fn rotten.core/init}}
+        :devtools {:after-load rotten.core/reload}}}}
