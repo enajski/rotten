@@ -1,13 +1,23 @@
 (ns rotten.core
   (:require ["rot-js" :as ROT :refer [Display
-                                      KEYS]]))
+                                      KEYS
+                                      Map]]
+            [clojure.string :as str]))
 
-(defonce state (atom {:player {:x 3
-                               :y 3}
+(defonce state (atom {:player      {:x 3
+                                    :y 3}
+                      :cast        [{:name "Neil"
+                                     :x    10
+                                     :y    10}
+                                    {:name "Karen"
+                                     :x    12
+                                     :y    12}]
                       :game-bounds {:x-min 1
                                     :x-max 20
                                     :y-min 1
-                                    :y-max 18}}))
+                                    :y-max 18}
+                      :turn        0
+                      :world       {}}))
 
 
 (def display-config
@@ -21,7 +31,8 @@
    :game-bounds   "*"
    :ui-horizontal "-"
    :ui-vertical   "|"
-   :ui-corner     "+"})
+   :ui-corner     "+"
+   :wall          "#"})
 
 
 (defonce display
@@ -36,18 +47,34 @@
   (into {} (map (fn [[k v]] [v k]) (js->clj KEYS))))
 
 
+(defn is-walkable? [x y world]
+  (println (get world [x y]))
+  (if (false? (:walkable? (get world [x y])))
+    false
+    true))
+
+
 (defn can-move? [direction]
-  (let [{player      :player
-         game-bounds :game-bounds} @state]
+  (let [{:keys [player
+                game-bounds
+                world]} @state
+        {:keys [x y]} player]
     (case direction
-      :left  (> (:x player) (:x-min game-bounds))
-      :right (> (:x-max game-bounds) (:x player))
-      :up    (> (:y player) (:y-min game-bounds))
-      :down  (> (:y-max game-bounds) (:y player)))))
+      :left  (and (> x (:x-min game-bounds))
+                  (is-walkable? (dec x) y world))
+      :right (and (> (:x-max game-bounds) (:x player))
+                  (is-walkable? (inc x) y world))
+      :up    (and (> (:y player) (:y-min game-bounds))
+                  (is-walkable? x (dec y) world))
+      :down  (and (> (:y-max game-bounds) (:y player))
+                  (is-walkable? x (inc y) world))
+
+      false)))
 
 
 (defn move-player [direction]
   (when (can-move? direction)
+    (swap! state (fn [old] (update old :turn inc)))
     (case direction
       :left  (swap! state update-in [:player :x] dec)
       :right (swap! state update-in [:player :x] inc)
@@ -88,8 +115,49 @@
   ([x y text line-length] (.drawText display x y text line-length)))
 
 
-(defn display-player [x y]
+(defn display-player [{:keys [x y]}]
   (draw x y (:player glyphs) "goldenrod"))
+
+
+(defn draw-character [{:keys [x y name]}]
+  (draw x y (str (first name))))
+
+
+(defn display-cast [{:keys [cast]}]
+  (doseq [character cast]
+    (draw-character character)))
+
+
+(defonce DividedMaze
+  (.. Map -DividedMaze))
+
+
+(defn generate-dungeon [{:keys [game-bounds]}]
+  (let [maze (DividedMaze. (:x-max game-bounds) (:y-max game-bounds))]
+    (.create maze
+             (fn [x y contents]
+               (when (= 1 contents)
+                 (swap! state update :world
+                        assoc [(+ x (:x-min game-bounds))
+                               (+ y (:y-min game-bounds))]
+                        {:kind      :wall
+                         :walkable? false}))))))
+
+
+(defn draw-wall [x y]
+  (draw x y (:wall glyphs)))
+
+
+(defn draw-tile [x y tile]
+  (case (:kind tile)
+    :wall (draw-wall x y)
+
+    nil))
+
+
+(defn display-world [{:keys [world]}]
+  (doseq [[[x y] tile] world]
+    (draw-tile x y tile)))
 
 
 (defn draw-corner [x y]
@@ -148,12 +216,28 @@
       (draw-horizontal-line x y))))
 
 
-(defn draw-bounds [bounds]
-  (draw-outline bounds))
+(defn draw-bounds [{:keys [game-bounds]}]
+  (draw-outline game-bounds))
+
+
+(defn draw-turn-number [{:keys [game-bounds turn]}]
+  (draw-text (+ 3 (:x-max game-bounds)) 0 (str "Turn: " turn)))
+
+
+(defn draw-cast-list [{:keys [cast game-bounds]}]
+  (draw-text (+ 3 (:x-max game-bounds)) 2 (str "Cast: " (str/join ", " (map :name cast)))))
 
 
 (defn draw-ui [state]
-  (draw-bounds (:game-bounds state)))
+  (draw-bounds state)
+  (draw-turn-number state)
+  (draw-cast-list state))
+
+
+(defn display-game-world [{:keys [player] :as state}]
+  (display-world state)
+  (display-player player)
+  (display-cast state))
 
 
 (defn clear []
@@ -161,17 +245,18 @@
 
 
 (defn render []
-  (let [{player :player} @state]
+  (let [frame-state @state]
     (clear)
-    (draw-ui @state)
-    (display-player (:x player) (:y player)))
-  (js/requestAnimationFrame render))
+    (draw-ui frame-state)
+    (display-game-world frame-state)
+  (js/requestAnimationFrame render)))
 
 
 (defn init []
   (mount-display)
   (render)
   (add-keyboard-listeners)
+  (generate-dungeon @state)
   (println "initted"))
 
 
