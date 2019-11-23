@@ -32,7 +32,8 @@
    :ui-horizontal "-"
    :ui-vertical   "|"
    :ui-corner     "+"
-   :wall          "#"})
+   :wall          "▓"
+   })
 
 
 (defonce display
