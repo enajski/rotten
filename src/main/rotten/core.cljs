@@ -11,9 +11,9 @@
 
 
 (def display-config
-  {:width    30
+  {:width    40
    :height   20
-   :fontSize 30})
+   :fontSize 24})
 
 
 (def glyphs
@@ -89,18 +89,67 @@
 
 
 (defn display-player [x y]
-  (draw x y (:player glyphs)))
+  (draw x y (:player glyphs) "goldenrod"))
 
 
-(defn draw-corners [bounds]
-  (draw (dec (:x-min bounds)) (dec (:y-min bounds)) (:ui-corner glyphs))
-  (draw (dec (:x-min bounds)) (inc (:y-max bounds)) (:ui-corner glyphs))
-  (draw (inc (:x-max bounds)) (dec (:y-min bounds)) (:ui-corner glyphs))
-  (draw (inc (:x-max bounds)) (inc (:y-max bounds)) (:ui-corner glyphs)))
+(defn draw-corner [x y]
+  (draw x y (:ui-corner glyphs)))
+
+
+(defn draw-vertical-line [x y]
+  (draw x y (:ui-vertical glyphs)))
+
+
+(defn draw-horizontal-line [x y]
+  (draw x y (:ui-horizontal glyphs)))
+
+
+(defn is-corner-surrounding-game-bounds? [x y bounds]
+  (and (#{(dec (:x-min bounds)) (inc (:x-max bounds))} x)
+       (#{(dec (:y-min bounds)) (inc (:y-max bounds))} y)))
+
+
+(defn is-left-side-surrounding-game-bounds? [x y bounds]
+  (and (= (dec (:x-min bounds)) x)
+       ((into #{} (range (:y-min bounds) (inc (:y-max bounds)))) y)))
+
+
+(defn is-right-side-surrounding-game-bounds? [x y bounds]
+  (and (= (inc (:x-max bounds)) x)
+       ((into #{} (range (:y-min bounds) (inc (:y-max bounds)))) y)))
+
+
+(defn is-top-side-surrounding-game-bounds? [x y bounds]
+  (and (= (dec (:y-min bounds)) y)
+       ((into #{} (range (:x-min bounds) (inc (:x-max bounds)))) x)))
+
+
+(defn is-bottom-side-surrounding-game-bounds? [x y bounds]
+  (and (= (inc (:y-max bounds)) y)
+       ((into #{} (range (:x-min bounds) (inc (:x-max bounds)))) x)))
+
+
+(defn draw-outline [bounds]
+  (doseq [x (range 0 (inc (inc (:x-max bounds))))
+          y (range 0 (inc (inc (:y-max bounds))))]
+    (cond
+
+      (is-corner-surrounding-game-bounds? x y bounds)
+      (draw-corner x y)
+
+
+      (or (is-left-side-surrounding-game-bounds? x y bounds)
+          (is-right-side-surrounding-game-bounds? x y bounds))
+      (draw-vertical-line x y)
+
+
+      (or (is-top-side-surrounding-game-bounds? x y bounds)
+          (is-bottom-side-surrounding-game-bounds? x y bounds))
+      (draw-horizontal-line x y))))
 
 
 (defn draw-bounds [bounds]
-  (draw-corners bounds))
+  (draw-outline bounds))
 
 
 (defn draw-ui [state]
