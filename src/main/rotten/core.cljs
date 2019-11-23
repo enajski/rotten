@@ -1,5 +1,6 @@
 (ns rotten.core
   (:require ["rot-js" :as ROT :refer [Display
+                                      FOV
                                       KEYS
                                       Map]]
             [clojure.string :as str]))
@@ -33,6 +34,7 @@
    :ui-vertical   "|"
    :ui-corner     "+"
    :wall          "▓"
+   :moon          "🌓 "
    })
 
 
@@ -49,7 +51,6 @@
 
 
 (defn is-walkable? [x y world]
-  (println (get world [x y]))
   (if (false? (:walkable? (get world [x y])))
     false
     true))
@@ -129,6 +130,21 @@
     (draw-character character)))
 
 
+(defonce RecursiveShadowcasting
+  (.. FOV -RecursiveShadowcasting))
+
+
+(defn light-passes? [x y]
+  (let [world (:world @state)]
+    (if-let [tile (get world [x y])]
+      (:walkable? tile)
+      true)))
+
+
+(defonce FOVHandler
+  (RecursiveShadowcasting. light-passes?))
+
+
 (defonce DividedMaze
   (.. Map -DividedMaze))
 
@@ -149,16 +165,30 @@
   (draw x y (:wall glyphs)))
 
 
+(defn draw-empty-space [x y]
+  (draw x y "" "#000" "rgba(250,150,60, 0.4)"))
+
+
 (defn draw-tile [x y tile]
   (case (:kind tile)
     :wall (draw-wall x y)
 
-    nil))
+    (draw-empty-space x y)))
 
 
-(defn display-world [{:keys [world]}]
-  (doseq [[[x y] tile] world]
-    (draw-tile x y tile)))
+(defn with-360-fov [x y range world]
+  (.compute FOVHandler x y range
+            (fn [x y r _visibility]
+
+              (if-let [tile (get world [x y])]
+                (draw-tile x y tile)
+                (draw-empty-space x y)))))
+
+
+(defn display-world [{:keys [world
+                             player]}]
+  (let [{:keys [x y]} player]
+    (with-360-fov x y 10 world)))
 
 
 (defn draw-corner [x y]
