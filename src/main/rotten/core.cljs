@@ -138,7 +138,7 @@
   (let [world (:world @state)]
     (if-let [tile (get world [x y])]
       (:walkable? tile)
-      true)))
+      false)))
 
 
 (defonce FOVHandler
@@ -153,12 +153,14 @@
   (let [maze (DividedMaze. (:x-max game-bounds) (:y-max game-bounds))]
     (.create maze
              (fn [x y contents]
-               (when (= 1 contents)
-                 (swap! state update :world
-                        assoc [(+ x (:x-min game-bounds))
-                               (+ y (:y-min game-bounds))]
+               (swap! state update :world
+                      assoc [(+ x (:x-min game-bounds))
+                             (+ y (:y-min game-bounds))]
+                      (if (= 1 contents)
                         {:kind      :wall
-                         :walkable? false}))))))
+                         :walkable? false}
+                        {:kind      nil
+                         :walkable? true}))))))
 
 
 (defn draw-wall [x y]
@@ -176,18 +178,33 @@
     (draw-empty-space x y)))
 
 
+(defn mark-tile-as-seen [x y]
+  (swap! state (fn [old]
+                 (update-in old [:world [x y]]
+                            (fnil assoc {:walkable? true}) :seen? true))))
+
+
 (defn with-360-fov [x y range world]
   (.compute FOVHandler x y range
             (fn [x y r _visibility]
+
+              (mark-tile-as-seen x y)
 
               (if-let [tile (get world [x y])]
                 (draw-tile x y tile)
                 (draw-empty-space x y)))))
 
 
+(defn display-seen [world]
+  (doseq [[[x y] tile] world]
+    (if (:seen? tile)
+      (draw-tile x y tile))))
+
+
 (defn display-world [{:keys [world
                              player]}]
   (let [{:keys [x y]} player]
+    (display-seen world)
     (with-360-fov x y 10 world)))
 
 
@@ -265,6 +282,16 @@
   (draw-cast-list state))
 
 
+(defn place-player []
+  (let [{:keys [world]} @state
+        [[x y] _tile] (->> world
+                           (shuffle)
+                           (filter (fn [[[_x _y] tile]] ((fnil get {}) tile :walkable? true)))
+                           first
+                           )]
+    (swap! state update :player assoc :x x :y y)))
+
+
 (defn display-game-world [{:keys [player] :as state}]
   (display-world state)
   (display-player player)
@@ -285,9 +312,10 @@
 
 (defn init []
   (mount-display)
+  (generate-dungeon @state)
+  (place-player)
   (render)
   (add-keyboard-listeners)
-  (generate-dungeon @state)
   (println "initted"))
 
 
