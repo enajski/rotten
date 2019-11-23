@@ -7,12 +7,8 @@
 
 (defonce state (atom {:player      {:x 3
                                     :y 3}
-                      :cast        [{:name "Neil"
-                                     :x    10
-                                     :y    10}
-                                    {:name "Karen"
-                                     :x    12
-                                     :y    12}]
+                      :cast        [{:name "Neil"}
+                                    {:name "Karen"}]
                       :game-bounds {:x-min 1
                                     :x-max 20
                                     :y-min 1
@@ -121,13 +117,8 @@
   (draw x y (:player glyphs) "goldenrod"))
 
 
-(defn draw-character [{:keys [x y name]}]
+(defn draw-character [x y {:keys [name]}]
   (draw x y (str (first name))))
-
-
-(defn display-cast [{:keys [cast]}]
-  (doseq [character cast]
-    (draw-character character)))
 
 
 (defonce RecursiveShadowcasting
@@ -174,6 +165,8 @@
 (defn draw-tile [x y tile]
   (case (:kind tile)
     :wall (draw-wall x y)
+
+    :character (draw-character x y tile)
 
     (draw-empty-space x y)))
 
@@ -282,20 +275,32 @@
   (draw-cast-list state))
 
 
-(defn place-player []
+(defn get-random-empty-location []
   (let [{:keys [world]} @state
         [[x y] _tile] (->> world
                            (shuffle)
                            (filter (fn [[[_x _y] tile]] ((fnil get {}) tile :walkable? true)))
-                           first
-                           )]
+                           first)]
+    [x y]))
+
+
+(defn place-player []
+  (let [[x y] (get-random-empty-location)]
     (swap! state update :player assoc :x x :y y)))
+
+
+(defn place-cast []
+  (doseq [character (:cast @state)]
+    (let [[x y] (get-random-empty-location)]
+      (swap! state update :world
+             assoc [x y] (assoc character
+                                :kind :character
+                                :walkable? false)))))
 
 
 (defn display-game-world [{:keys [player] :as state}]
   (display-world state)
-  (display-player player)
-  (display-cast state))
+  (display-player player))
 
 
 (defn clear []
@@ -314,6 +319,7 @@
   (mount-display)
   (generate-dungeon @state)
   (place-player)
+  (place-cast)
   (render)
   (add-keyboard-listeners)
   (println "initted"))
