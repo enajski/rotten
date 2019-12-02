@@ -2,23 +2,15 @@
   (:require ["rot-js" :as ROT :refer [Display
                                       FOV
                                       KEYS
-                                      Map]]
-            [clojure.string :as str]))
-
-(defonce state (atom {:player      {:x 3
-                                    :y 3}
-                      :cast        [{:name "Neil"}
-                                    {:name "Karen"}]
-                      :game-bounds {:x-min 1
-                                    :x-max 20
-                                    :y-min 1
-                                    :y-max 18}
-                      :turn        0
-                      :world       {}}))
+                                      Map
+                                      Path]]
+            [rotten.db :as db]
+            [clojure.string :as str]
+            [cljs.pprint :as pprint]))
 
 
 (def display-config
-  {:width    40
+  {:width    70
    :height   20
    :fontSize 24})
 
@@ -47,37 +39,46 @@
 
 
 (defn is-walkable? [x y world]
-  (if (false? (:walkable? (get world [x y])))
+  (if (false? (:tile/walkable? (get world [x y])))
     false
     true))
 
 
-(defn can-move? [direction]
-  (let [{:keys [player
-                game-bounds
-                world]} @state
-        {:keys [x y]} player]
+(defn get-random-empty-location []
+  (let [{:keys [world]} @db/state
+        [[x y] _tile] (->> world
+                           (shuffle)
+                           (filter (fn [[[_x _y] tile]] (get tile :tile/walkable?)))
+                           first)]
+    [x y]))
+
+
+(defn can-move? [entity-id direction]
+  (let [{:keys [game-bounds
+                world]} @db/state
+        [x y] (db/get-entity-position entity-id)]
     (case direction
       :left  (and (> x (:x-min game-bounds))
                   (is-walkable? (dec x) y world))
-      :right (and (> (:x-max game-bounds) (:x player))
+      :right (and (> (:x-max game-bounds) x)
                   (is-walkable? (inc x) y world))
-      :up    (and (> (:y player) (:y-min game-bounds))
+      :up    (and (> y (:y-min game-bounds))
                   (is-walkable? x (dec y) world))
-      :down  (and (> (:y-max game-bounds) (:y player))
+      :down  (and (> (:y-max game-bounds) y)
                   (is-walkable? x (inc y) world))
 
       false)))
 
 
 (defn move-player [direction]
-  (when (can-move? direction)
-    (swap! state (fn [old] (update old :turn inc)))
-    (case direction
-      :left  (swap! state update-in [:player :x] dec)
-      :right (swap! state update-in [:player :x] inc)
-      :up    (swap! state update-in [:player :y] dec)
-      :down  (swap! state update-in [:player :y] inc))))
+  (let [[entity-id entity] (db/get-player-entity)
+        [x y]              (:entity/position entity)]
+    (when (can-move? entity-id direction)
+      (case direction
+        :left  (db/move-entity [x y] [(dec x) y] entity-id)
+        :right (db/move-entity [x y] [(inc x) y] entity-id)
+        :up    (db/move-entity [x y] [x (dec y)] entity-id)
+        :down  (db/move-entity [x y] [x (inc y)] entity-id)))))
 
 
 (defn handle-input [vk]
@@ -113,12 +114,28 @@
   ([x y text line-length] (.drawText display x y text line-length)))
 
 
-(defn display-player [{:keys [x y]}]
+(defn draw-player [x y]
   (draw x y (:player glyphs) "goldenrod"))
 
 
-(defn draw-character [x y {:keys [name]}]
+(defn draw-character [x y {:keys [:entity/name]}]
   (draw x y (str (first name))))
+
+
+(defonce AStar
+  (.. Path -AStar))
+
+
+(defn PathHandler [target-x target-y]
+  (AStar. target-x target-y is-walkable?))
+
+
+;; (defn pick-a-stroll-route [from-x from-y]
+;;   (let [[target-x target-y] (get-random-empty-location)]
+;;     (.compute (PathHandler target-x target-y)
+;;               from-x from-y
+;;               (fn [x y]
+;;                 #_(swap! )))))
 
 
 (defonce RecursiveShadowcasting
@@ -126,10 +143,10 @@
 
 
 (defn light-passes? [x y]
-  (let [world (:world @state)]
+  (let [world (:world @db/state)]
     (if-let [tile (get world [x y])]
-      (:walkable? tile)
-      false)))
+      (:tile/walkable? tile)
+      true)))
 
 
 (defonce FOVHandler
@@ -140,18 +157,18 @@
   (.. Map -DividedMaze))
 
 
-(defn generate-dungeon [{:keys [game-bounds]}]
+(defn generate-maze [{:keys [game-bounds]}]
   (let [maze (DividedMaze. (:x-max game-bounds) (:y-max game-bounds))]
     (.create maze
              (fn [x y contents]
-               (swap! state update :world
-                      assoc [(+ x (:x-min game-bounds))
-                             (+ y (:y-min game-bounds))]
-                      (if (= 1 contents)
-                        {:kind      :wall
-                         :walkable? false}
-                        {:kind      nil
-                         :walkable? true}))))))
+               (let [tile (if (= 1 contents)
+                            {:tile/kind      :tile.kind/wall
+                             :tile/walkable? false}
+                            {:tile/kind      :tile.kind/floor
+                             :tile/walkable? true})]
+                 (db/create-and-place-tile (+ x (:x-min game-bounds))
+                                           (+ y (:y-min game-bounds))
+                                           tile))))))
 
 
 (defn draw-wall [x y]
@@ -159,44 +176,46 @@
 
 
 (defn draw-empty-space [x y]
-  (draw x y "" "#000" "rgba(250,150,60, 0.4)"))
+  (draw x y "" "#000" "rgba(250,150,60,0.4)"))
 
 
 (defn draw-tile [x y tile]
-  (case (:kind tile)
-    :wall (draw-wall x y)
+  (case (:tile/kind tile)
+    :tile.kind/wall (draw-wall x y)
 
-    :character (draw-character x y tile)
+    :tile.kind/floor (draw-empty-space x y)
 
     (draw-empty-space x y)))
 
 
-(defn mark-tile-as-seen [x y]
-  (swap! state (fn [old]
-                 (update-in old [:world [x y]]
-                            (fnil assoc {:walkable? true}) :seen? true))))
+(defn draw-entity [x y entity]
+  (case (:entity/kind entity)
+    :entity.kind/player (draw-player x y)
+
+    :entity.kind/character (draw-character x y entity)))
 
 
-(defn with-360-fov [x y range world]
-  (.compute FOVHandler x y range
+(defn with-360-fov [origin-x origin-y range world]
+  (.compute FOVHandler origin-x origin-y range
             (fn [x y r _visibility]
 
-              (mark-tile-as-seen x y)
+              (db/mark-tile-as-seen x y)
 
-              (if-let [tile (get world [x y])]
-                (draw-tile x y tile)
-                (draw-empty-space x y)))))
+              (draw-tile x y (get world [x y]))
+
+              (doseq [entity (db/get-tile-entities x y)]
+                (draw-entity x y entity)))))
 
 
 (defn display-seen [world]
   (doseq [[[x y] tile] world]
-    (if (:seen? tile)
+    (if (:tile/seen? tile)
       (draw-tile x y tile))))
 
 
-(defn display-world [{:keys [world
-                             player]}]
-  (let [{:keys [x y]} player]
+(defn display-world [{:keys [world]}]
+  (let [[_entity-id entity] (db/get-player-entity)
+        [x y]               (:entity/position entity)]
     (display-seen world)
     (with-360-fov x y 10 world)))
 
@@ -265,8 +284,8 @@
   (draw-text (+ 3 (:x-max game-bounds)) 0 (str "Turn: " turn)))
 
 
-(defn draw-cast-list [{:keys [cast game-bounds]}]
-  (draw-text (+ 3 (:x-max game-bounds)) 2 (str "Cast: " (str/join ", " (map :name cast)))))
+(defn draw-cast-list [{:keys [entities game-bounds]}]
+  (draw-text (+ 3 (:x-max game-bounds)) 2 (str "Cast: " (map #(:entity/name (second %)) entities))))
 
 
 (defn draw-ui [state]
@@ -275,32 +294,29 @@
   (draw-cast-list state))
 
 
-(defn get-random-empty-location []
-  (let [{:keys [world]} @state
-        [[x y] _tile] (->> world
-                           (shuffle)
-                           (filter (fn [[[_x _y] tile]] ((fnil get {}) tile :walkable? true)))
-                           first)]
-    [x y]))
-
-
 (defn place-player []
-  (let [[x y] (get-random-empty-location)]
-    (swap! state update :player assoc :x x :y y)))
+  (let [entity {:entity/kind :entity.kind/player
+                :entity/name "The Player"}
+        entity-id (random-uuid)
+        [x y] (get-random-empty-location)]
+    (db/create-entity entity-id entity)
+    (db/place-entity [x y] entity-id)
+    (db/elevate-entity-to-player entity-id)))
 
 
 (defn place-cast []
-  (doseq [character (:cast @state)]
-    (let [[x y] (get-random-empty-location)]
-      (swap! state update :world
-             assoc [x y] (assoc character
-                                :kind :character
-                                :walkable? false)))))
+  (doseq [character ["Neil" "Karen"]]
+    (let [[x y] (get-random-empty-location)
+          entity-id (random-uuid)
+          entity {:entity/kind :entity.kind/character
+                  :entity/name character}]
+      (db/create-entity entity-id entity)
+      (db/place-entity [x y] entity-id))))
 
 
-(defn display-game-world [{:keys [player] :as state}]
+(defn display-game-world [state]
   (display-world state)
-  (display-player player))
+  #_(display-player player))
 
 
 (defn clear []
@@ -308,7 +324,7 @@
 
 
 (defn render []
-  (let [frame-state @state]
+  (let [frame-state @db/state]
     (clear)
     (draw-ui frame-state)
     (display-game-world frame-state)
@@ -317,9 +333,10 @@
 
 (defn init []
   (mount-display)
-  (generate-dungeon @state)
+  (generate-maze @db/state)
   (place-player)
   (place-cast)
+  (println @db/state)
   (render)
   (add-keyboard-listeners)
   (println "initted"))
