@@ -10,7 +10,7 @@
 
 (def display-config
   {:width    70
-   :height   20
+   :height   30
    :fontSize 24})
 
 
@@ -44,12 +44,11 @@
 
 
 (defn get-random-empty-location []
-  (let [{:keys [world]} @db/state
-        [[x y] _tile] (->> world
-                           (shuffle)
-                           (filter (fn [[[_x _y] tile]] (get tile :tile/walkable?)))
-                           first)]
-    [x y]))
+  (let [{:keys [world]}  @db/state
+        [position _tile] (->> world
+                              (filter (fn [[[_x _y] tile]] (get tile :tile/walkable?)))
+                              (rand-nth))]
+    position))
 
 
 (defn can-move? [entity-id direction]
@@ -187,6 +186,10 @@
   (.. Map -DividedMaze))
 
 
+(defonce Cellular
+  (.. Map -Cellular))
+
+
 (defn generate-maze [{:keys [game-bounds]}]
   (let [maze (DividedMaze. (:x-max game-bounds) (:y-max game-bounds))]
     (.create maze
@@ -199,6 +202,29 @@
                  (db/create-and-place-tile (+ x (:x-min game-bounds))
                                            (+ y (:y-min game-bounds))
                                            tile))))))
+
+
+(defn generate-cavern [{:keys [game-bounds]}]
+  (let [cavern (Cellular. (dec (:x-max game-bounds))
+                          (dec (:y-max game-bounds))
+                          #js {:connected true})]
+    (.randomize cavern 0.5)
+
+    (dotimes [i 5]
+      (.create cavern))
+
+    (.create cavern
+             (fn [x y contents]
+               (let [tile (if (= 1 contents)
+                            {:tile/kind      :tile.kind/wall
+                             :tile/walkable? false}
+                            {:tile/kind      :tile.kind/floor
+                             :tile/walkable? true})]
+                 (db/create-and-place-tile (+ x (:x-min game-bounds))
+                                           (+ y (:y-min game-bounds))
+                                           tile))))
+
+    (.connect cavern)))
 
 
 (defn draw-wall [x y]
@@ -215,7 +241,7 @@
 
     :tile.kind/floor (draw-empty-space x y)
 
-    (draw-empty-space x y)))
+    nil))
 
 
 (defn draw-entity [x y entity]
@@ -229,12 +255,13 @@
   (.compute FOVHandler origin-x origin-y range
             (fn [x y r _visibility]
 
-              (db/mark-tile-as-seen x y)
+              (when (db/get-tile x y)
+                (db/mark-tile-as-seen x y)
 
-              (draw-tile x y (get world [x y]))
+                (draw-tile x y (get world [x y]))
 
-              (doseq [entity (db/get-tile-entities x y)]
-                (draw-entity x y entity)))))
+                (doseq [entity (db/get-tile-entities x y)]
+                  (draw-entity x y entity))))))
 
 
 (defn draw-seen-overlay [x y]
@@ -324,7 +351,7 @@
 
 
 (defn draw-ui [state]
-  (draw-bounds state)
+  ;; (draw-bounds state)
   (draw-turn-number state)
   (draw-cast-list state))
 
@@ -366,6 +393,7 @@
 (defn init []
   (mount-display)
   (generate-maze @db/state)
+  ;; (generate-cavern @db/state)
   (place-player)
   (place-cast)
   (.dir js/console (clj->js @db/state))

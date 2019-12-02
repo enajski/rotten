@@ -4,10 +4,10 @@
                       :entities    {}
                       :player      {}
                       :turn        0
-                      :game-bounds {:x-min 1
-                                    :x-max 20
-                                    :y-min 1
-                                    :y-max 18}}))
+                      :game-bounds {:x-min 0
+                                    :x-max 30
+                                    :y-min 0
+                                    :y-max 30}}))
 
 ;; TODO: check out https://vvvvalvalval.github.io/supdate/
 
