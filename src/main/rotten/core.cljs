@@ -4,9 +4,7 @@
                                       KEYS
                                       Map
                                       Path]]
-            [rotten.db :as db]
-            [clojure.string :as str]
-            [cljs.pprint :as pprint]))
+            [rotten.db :as db]))
 
 
 (def display-config
@@ -207,10 +205,15 @@
                 (draw-entity x y entity)))))
 
 
+(defn draw-seen-overlay [x y]
+  (draw x y (:wall glyphs) "rgba(200,200,200,0.1)"))
+
+
 (defn display-seen [world]
   (doseq [[[x y] tile] world]
-    (if (:tile/seen? tile)
-      (draw-tile x y tile))))
+    (when (:tile/seen? tile)
+      (draw-tile x y tile)
+      (draw-seen-overlay x y))))
 
 
 (defn display-world [{:keys [world]}]
@@ -314,11 +317,6 @@
       (db/place-entity [x y] entity-id))))
 
 
-(defn display-game-world [state]
-  (display-world state)
-  #_(display-player player))
-
-
 (defn clear []
   (.clear display))
 
@@ -327,7 +325,7 @@
   (let [frame-state @db/state]
     (clear)
     (draw-ui frame-state)
-    (display-game-world frame-state)
+    (display-world frame-state)
   (js/requestAnimationFrame render)))
 
 
@@ -336,7 +334,7 @@
   (generate-maze @db/state)
   (place-player)
   (place-cast)
-  (println @db/state)
+  (.dir js/console (clj->js @db/state))
   (render)
   (add-keyboard-listeners)
   (println "initted"))
