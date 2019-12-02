@@ -3,7 +3,8 @@
                                       FOV
                                       KEYS
                                       Map
-                                      Path]]
+                                      Path
+                                      Scheduler]]
             [rotten.db :as db]))
 
 
@@ -68,6 +69,36 @@
       false)))
 
 
+(defonce simple-scheduler
+  (.. Scheduler -Simple))
+
+
+(defonce scheduler
+  (simple-scheduler.))
+
+
+(defn add-entity-to-schedule [entity-id]
+  (.add scheduler entity-id true))
+
+
+(defn next-scheduler-entity-id! []
+  (.next scheduler))
+
+
+(defn execute-turn-for-entity-id [entity-id]
+  (println "It's " entity-id "'s turn now"))
+
+
+(defn complete-player-turn
+  "Iterate over the next entities waiting for their turn
+   until it's the Player's turn again."
+  []
+  (let [next-turn-entity-id (next-scheduler-entity-id!)]
+    (execute-turn-for-entity-id next-turn-entity-id)
+    (when-not (db/is-player? next-turn-entity-id)
+      (recur))))
+
+
 (defn move-player [direction]
   (let [[entity-id entity] (db/get-player-entity)
         [x y]              (:entity/position entity)]
@@ -76,7 +107,8 @@
         :left  (db/move-entity [x y] [(dec x) y] entity-id)
         :right (db/move-entity [x y] [(inc x) y] entity-id)
         :up    (db/move-entity [x y] [x (dec y)] entity-id)
-        :down  (db/move-entity [x y] [x (inc y)] entity-id)))))
+        :down  (db/move-entity [x y] [x (inc y)] entity-id))
+      (complete-player-turn))))
 
 
 (defn handle-input [vk]
@@ -206,7 +238,7 @@
 
 
 (defn draw-seen-overlay [x y]
-  (draw x y (:wall glyphs) "rgba(200,200,200,0.1)"))
+  (draw x y "" "#000" "rgba(200,200,200,0.1)"))
 
 
 (defn display-seen [world]
@@ -304,7 +336,8 @@
         [x y] (get-random-empty-location)]
     (db/create-entity entity-id entity)
     (db/place-entity [x y] entity-id)
-    (db/elevate-entity-to-player entity-id)))
+    (db/elevate-entity-to-player entity-id)
+    (add-entity-to-schedule entity-id)))
 
 
 (defn place-cast []
@@ -314,7 +347,8 @@
           entity {:entity/kind :entity.kind/character
                   :entity/name character}]
       (db/create-entity entity-id entity)
-      (db/place-entity [x y] entity-id))))
+      (db/place-entity [x y] entity-id)
+      (add-entity-to-schedule entity-id))))
 
 
 (defn clear []

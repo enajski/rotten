@@ -67,3 +67,8 @@
 (defn get-tile-entities [x y]
   (map get-entity (get-tile-entity-ids x y)))
 
+
+(defn is-player? [entity-id]
+  (= entity-id
+     (first (get-player-entity))))
+
