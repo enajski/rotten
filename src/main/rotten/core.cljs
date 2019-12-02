@@ -37,10 +37,11 @@
   (into {} (map (fn [[k v]] [v k]) (js->clj KEYS))))
 
 
-(defn is-walkable? [x y world]
-  (if (false? (:tile/walkable? (get world [x y])))
-    false
-    true))
+(defn is-walkable?
+  ([x y]
+   (:tile/walkable? (db/get-tile x y)))
+  ([x y world]
+   (:tile/walkable? (get world [x y]))))
 
 
 (defn get-random-empty-location []
@@ -68,12 +69,15 @@
       false)))
 
 
-(defonce simple-scheduler
+;; (defn can-move? )
+
+
+(defonce SimpleScheduler
   (.. Scheduler -Simple))
 
 
 (defonce scheduler
-  (simple-scheduler.))
+  (SimpleScheduler.))
 
 
 (defn add-entity-to-schedule [entity-id]
@@ -84,8 +88,44 @@
   (.next scheduler))
 
 
+(defonce AStar
+  (.. Path -AStar))
+
+
+(defn PathHandler [target-x target-y]
+  (AStar. target-x target-y is-walkable?))
+
+
+(defn pick-a-stroll-route [from-x from-y]
+  (let [[target-x target-y] (get-random-empty-location)
+        acc                 (atom [])]
+    (.compute (PathHandler target-x target-y)
+              from-x from-y
+              (fn [x y]
+                (swap! acc conj [x y])))
+
+    @acc))
+
+
+(defn stroll [entity-id]
+  (let [entity (db/get-entity entity-id)
+        planned-movement (:entity/movement entity)]
+    (if (seq planned-movement)
+      (do (db/move-entity (:entity/position entity)
+                          (first planned-movement)
+                          entity-id)
+          (db/update-movement entity-id (rest planned-movement)))
+      (let [[x y] (db/get-entity-position entity-id)
+            new-movement (pick-a-stroll-route x y)]
+        (db/update-movement entity-id new-movement)))))
+
+
 (defn execute-turn-for-entity-id [entity-id]
-  (println "It's " entity-id "'s turn now"))
+  (println "It's " entity-id "'s turn now")
+
+  ;; NPC turn
+  (when-not (db/is-player? entity-id)
+    (stroll entity-id)))
 
 
 (defn complete-player-turn
@@ -149,22 +189,6 @@
 
 (defn draw-character [x y {:keys [:entity/name]}]
   (draw x y (str (first name))))
-
-
-(defonce AStar
-  (.. Path -AStar))
-
-
-(defn PathHandler [target-x target-y]
-  (AStar. target-x target-y is-walkable?))
-
-
-;; (defn pick-a-stroll-route [from-x from-y]
-;;   (let [[target-x target-y] (get-random-empty-location)]
-;;     (.compute (PathHandler target-x target-y)
-;;               from-x from-y
-;;               (fn [x y]
-;;                 #_(swap! )))))
 
 
 (defonce RecursiveShadowcasting

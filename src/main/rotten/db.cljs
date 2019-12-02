@@ -72,3 +72,6 @@
   (= entity-id
      (first (get-player-entity))))
 
+
+(defn update-movement [entity-id movement]
+  (swap! state assoc-in [:entities entity-id :entity/movement] movement))
