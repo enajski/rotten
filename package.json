@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "devDependencies": {
-    "shadow-cljs": "2.8.74"
+    "shadow-cljs": "3.3.4"
   },
   "dependencies": {
     "rot-js": "^2.1.1"
